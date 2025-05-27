@@ -6,7 +6,6 @@ const rateLimit = require('express-rate-limit');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const path = require('path');
-const fs = require('fs');
 
 // Import your existing routes from src folder
 const productRoutes = require('../src/routes/product.routes');
@@ -53,7 +52,7 @@ connectDB();
 
 // Middleware
 app.use(express.json());
-app.use(cors());  // Allow all origins during development
+app.use(cors());
 
 // Modify your helmet configuration to properly allow images from your origin
 app.use(helmet({
@@ -68,17 +67,8 @@ app.use(helmet({
 
 app.use(morgan('dev'));
 
-// Note: Static file serving and directory creation won't work on Vercel serverless
-// Consider using cloud storage like Cloudinary, AWS S3, etc. for file uploads
-
-// Rate limiting (optional - uncomment if needed)
-// const limiter = rateLimit({
-//     windowMs: 15 * 60 * 1000, // 15 minutes
-//     max: 100 // limit each IP to 100 requests per windowMs
-// });
-// app.use(limiter);
-
-// Routes (note: /api prefix is handled by Vercel routing)
+// Routes - NO /api prefix needed here (Vercel adds it automatically)
+// These will be accessible as /api/products, /api/users, etc.
 app.use('/products', productRoutes);
 app.use('/users', userRoutes);
 app.use('/student-verification', studentVerificationRoutes);
@@ -89,6 +79,53 @@ app.use('/hero-images', heroImageRoutes);
 app.use('/color-tiles', colorTileRoutes);
 app.use('/subscribers', subscriberRoutes);
 
+// Health check routes
+app.get("/", (req, res) => {
+  res.json({ 
+    message: "Backend is working on Vercel!",
+    timestamp: new Date().toISOString(),
+    routes: [
+      '/api/products',
+      '/api/users', 
+      '/api/student-verification',
+      '/api/orders',
+      '/api/dashboard',
+      '/api/contact',
+      '/api/hero-images',
+      '/api/color-tiles',
+      '/api/subscribers'
+    ]
+  });
+});
+
+app.get('/ping', (req, res) => {
+  res.json({ 
+    message: 'pong',
+    timestamp: new Date().toISOString()
+  });
+});
+
+// 404 handler
+app.use('*', (req, res) => {
+  res.status(404).json({
+    success: false,
+    message: `Route ${req.originalUrl} not found`,
+    availableRoutes: [
+      '/api/',
+      '/api/ping',
+      '/api/products',
+      '/api/users',
+      '/api/student-verification',
+      '/api/orders',
+      '/api/dashboard',
+      '/api/contact',
+      '/api/hero-images',
+      '/api/color-tiles',
+      '/api/subscribers'
+    ]
+  });
+});
+
 // Error handling middleware
 app.use((err, req, res, next) => {
     console.error(err.stack);
@@ -97,18 +134,6 @@ app.use((err, req, res, next) => {
         message: 'Something went wrong!',
         error: process.env.NODE_ENV === 'development' ? err.message : undefined
     });
-});
-
-// Health check routes
-app.get("/", (req, res) => {
-  res.json({ 
-    message: "Backend is working on Vercel!",
-    timestamp: new Date().toISOString()
-  });
-});
-
-app.get('/ping', (req, res) => {
-  res.json({ message: 'pong' });
 });
 
 // Export for Vercel
