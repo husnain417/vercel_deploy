@@ -64,22 +64,12 @@ try {
   heroImageRoutes = require('../src/routes/heroImageRoutes');
   colorTileRoutes = require('../src/routes/colorTileRoutes');
   subscriberRoutes = require('../src/routes/subscriberRoutes');
+  console.log('Routes imported successfully');
 } catch (error) {
   console.error('Error importing routes:', error);
 }
 
-// Routes - only add if they exist
-if (productRoutes) app.use('/products', productRoutes);
-if (userRoutes) app.use('/users', userRoutes);
-if (studentVerificationRoutes) app.use('/student-verification', studentVerificationRoutes);
-if (orderRoutes) app.use('/orders', orderRoutes);
-if (dashboardRoutes) app.use('/dashboard', dashboardRoutes);
-if (contactRoutes) app.use('/contact', contactRoutes);
-if (heroImageRoutes) app.use('/hero-images', heroImageRoutes);
-if (colorTileRoutes) app.use('/color-tiles', colorTileRoutes);
-if (subscriberRoutes) app.use('/subscribers', subscriberRoutes);
-
-// Health check routes
+// Health check routes FIRST
 app.get("/", (req, res) => {
   res.json({ 
     message: "Backend is working on Vercel!",
@@ -109,7 +99,8 @@ app.get('/ping', (req, res) => {
 // Test route to debug
 app.get('/test', (req, res) => {
   res.json({
-    message: 'Test route working',
+    message: 'Test route working!',
+    timestamp: new Date().toISOString(),
     routesLoaded: {
       productRoutes: !!productRoutes,
       userRoutes: !!userRoutes,
@@ -124,23 +115,43 @@ app.get('/test', (req, res) => {
   });
 });
 
-// 404 handler
-app.use('*', (req, res) => {
-  console.log('404 - Route not found:', req.originalUrl);
-  res.status(404).json({
-    success: false,
-    message: `Route ${req.originalUrl} not found`,
-    method: req.method,
-    availableRoutes: [
-      'GET /api/',
-      'GET /api/ping',
-      'GET /api/test',
-      ...(productRoutes ? ['GET /api/products'] : []),
-      ...(userRoutes ? ['POST /api/users'] : []),
-      // Add other routes as needed
-    ]
-  });
-});
+// API Routes - AFTER the basic routes
+if (productRoutes) {
+  app.use('/products', productRoutes);
+  console.log('Product routes loaded');
+}
+if (userRoutes) {
+  app.use('/users', userRoutes);
+  console.log('User routes loaded');
+}
+if (studentVerificationRoutes) {
+  app.use('/student-verification', studentVerificationRoutes);
+  console.log('Student verification routes loaded');
+}
+if (orderRoutes) {
+  app.use('/orders', orderRoutes);
+  console.log('Order routes loaded');
+}
+if (dashboardRoutes) {
+  app.use('/dashboard', dashboardRoutes);
+  console.log('Dashboard routes loaded');
+}
+if (contactRoutes) {
+  app.use('/contact', contactRoutes);
+  console.log('Contact routes loaded');
+}
+if (heroImageRoutes) {
+  app.use('/hero-images', heroImageRoutes);
+  console.log('Hero image routes loaded');
+}
+if (colorTileRoutes) {
+  app.use('/color-tiles', colorTileRoutes);
+  console.log('Color tile routes loaded');
+}
+if (subscriberRoutes) {
+  app.use('/subscribers', subscriberRoutes);
+  console.log('Subscriber routes loaded');
+}
 
 // Error handling middleware
 app.use((err, req, res, next) => {
@@ -150,6 +161,17 @@ app.use((err, req, res, next) => {
         message: 'Something went wrong!',
         error: process.env.NODE_ENV === 'development' ? err.message : 'Internal server error'
     });
+});
+
+// 404 handler - MUST be absolutely last
+app.use((req, res) => {
+  console.log('404 - Route not found:', req.originalUrl, 'Method:', req.method);
+  res.status(404).json({
+    success: false,
+    message: `Route ${req.originalUrl} not found`,
+    method: req.method,
+    timestamp: new Date().toISOString()
+  });
 });
 
 // Export for Vercel
