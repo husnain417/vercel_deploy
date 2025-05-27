@@ -1,8 +1,6 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
-const helmet = require('helmet');
-const morgan = require('morgan');
 
 const app = express();
 
@@ -16,6 +14,10 @@ async function connectDB() {
   if (cached.conn) return cached.conn;
   
   if (!cached.promise) {
+    if (!process.env.MONGODB_URI) {
+      console.error('MONGODB_URI environment variable is not set');
+      return null;
+    }
     cached.promise = mongoose.connect(process.env.MONGODB_URI, {
       bufferCommands: false,
     });
@@ -27,7 +29,6 @@ async function connectDB() {
   } catch (err) {
     cached.promise = null;
     console.error('MongoDB connection error:', err);
-    throw err;
   }
   
   return cached.conn;
@@ -36,143 +37,137 @@ async function connectDB() {
 // Connect to database
 connectDB();
 
-// Middleware
+// Basic middleware
 app.use(express.json());
 app.use(cors());
-app.use(helmet({
-  contentSecurityPolicy: {
-    directives: {
-      ...helmet.contentSecurityPolicy.getDefaultDirectives(),
-      "img-src": ["'self'", "data:", "https://*.vercel.app", "https://res.cloudinary.com"]
-    }
-  },
-  crossOriginResourcePolicy: { policy: "cross-origin" }
-}));
-app.use(morgan('dev'));
 
-// Import routes with error handling
-let productRoutes, userRoutes, studentVerificationRoutes, orderRoutes, 
-    dashboardRoutes, contactRoutes, heroImageRoutes, colorTileRoutes, subscriberRoutes;
+// Log all requests for debugging
+app.use((req, res, next) => {
+  console.log(`${req.method} ${req.path} - ${new Date().toISOString()}`);
+  next();
+});
 
-try {
-  productRoutes = require('../src/routes/product.routes');
-  userRoutes = require('../src/routes/user.routes');
-  studentVerificationRoutes = require('../src/routes/studentVerification.routes');
-  orderRoutes = require('../src/routes/order.routes');
-  dashboardRoutes = require('../src/routes/dashboard.routes');
-  contactRoutes = require('../src/routes/contact.routes');
-  heroImageRoutes = require('../src/routes/heroImageRoutes');
-  colorTileRoutes = require('../src/routes/colorTileRoutes');
-  subscriberRoutes = require('../src/routes/subscriberRoutes');
-  console.log('Routes imported successfully');
-} catch (error) {
-  console.error('Error importing routes:', error);
-}
-
-// Health check routes FIRST
+// Basic routes - define these BEFORE trying to import other routes
 app.get("/", (req, res) => {
+  console.log('Root route hit');
   res.json({ 
     message: "Backend is working on Vercel!",
     timestamp: new Date().toISOString(),
     environment: process.env.NODE_ENV || 'development',
+    nodeVersion: process.version,
     routes: [
-      '/api/products',
-      '/api/users', 
-      '/api/student-verification',
-      '/api/orders',
-      '/api/dashboard',
-      '/api/contact',
-      '/api/hero-images',
-      '/api/color-tiles',
-      '/api/subscribers'
+      '/api/',
+      '/api/ping',
+      '/api/test',
+      '/api/health'
     ]
   });
 });
 
 app.get('/ping', (req, res) => {
+  console.log('Ping route hit');
   res.json({ 
     message: 'pong',
     timestamp: new Date().toISOString()
   });
 });
 
-// Test route to debug
+app.get('/health', (req, res) => {
+  console.log('Health route hit');
+  res.json({
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    database: cached.conn ? 'connected' : 'disconnected'
+  });
+});
+
 app.get('/test', (req, res) => {
+  console.log('Test route hit');
   res.json({
     message: 'Test route working!',
     timestamp: new Date().toISOString(),
-    routesLoaded: {
-      productRoutes: !!productRoutes,
-      userRoutes: !!userRoutes,
-      studentVerificationRoutes: !!studentVerificationRoutes,
-      orderRoutes: !!orderRoutes,
-      dashboardRoutes: !!dashboardRoutes,
-      contactRoutes: !!contactRoutes,
-      heroImageRoutes: !!heroImageRoutes,
-      colorTileRoutes: !!colorTileRoutes,
-      subscriberRoutes: !!subscriberRoutes
+    environment: {
+      NODE_ENV: process.env.NODE_ENV,
+      hasMongoUri: !!process.env.MONGODB_URI,
+      platform: process.platform,
+      nodeVersion: process.version
     }
   });
 });
 
-// API Routes - AFTER the basic routes
-if (productRoutes) {
-  app.use('/products', productRoutes);
-  console.log('Product routes loaded');
-}
-if (userRoutes) {
-  app.use('/users', userRoutes);
-  console.log('User routes loaded');
-}
-if (studentVerificationRoutes) {
-  app.use('/student-verification', studentVerificationRoutes);
-  console.log('Student verification routes loaded');
-}
-if (orderRoutes) {
-  app.use('/orders', orderRoutes);
-  console.log('Order routes loaded');
-}
-if (dashboardRoutes) {
-  app.use('/dashboard', dashboardRoutes);
-  console.log('Dashboard routes loaded');
-}
-if (contactRoutes) {
-  app.use('/contact', contactRoutes);
-  console.log('Contact routes loaded');
-}
-if (heroImageRoutes) {
-  app.use('/hero-images', heroImageRoutes);
-  console.log('Hero image routes loaded');
-}
-if (colorTileRoutes) {
-  app.use('/color-tiles', colorTileRoutes);
-  console.log('Color tile routes loaded');
-}
-if (subscriberRoutes) {
-  app.use('/subscribers', subscriberRoutes);
-  console.log('Subscriber routes loaded');
-}
+// Try to import and use your routes
+let routesLoaded = {};
 
-// Error handling middleware
-app.use((err, req, res, next) => {
-    console.error('Error:', err.stack);
-    res.status(500).json({
-        success: false,
-        message: 'Something went wrong!',
-        error: process.env.NODE_ENV === 'development' ? err.message : 'Internal server error'
-    });
+// Import routes one at a time with detailed error handling
+const routesToLoad = [
+  { name: 'products', path: '../src/routes/product.routes', route: '/products' },
+  { name: 'users', path: '../src/routes/user.routes', route: '/users' },
+  { name: 'student-verification', path: '../src/routes/studentVerification.routes', route: '/student-verification' },
+  { name: 'orders', path: '../src/routes/order.routes', route: '/orders' },
+  { name: 'dashboard', path: '../src/routes/dashboard.routes', route: '/dashboard' },
+  { name: 'contact', path: '../src/routes/contact.routes', route: '/contact' },
+  { name: 'hero-images', path: '../src/routes/heroImageRoutes', route: '/hero-images' },
+  { name: 'color-tiles', path: '../src/routes/colorTileRoutes', route: '/color-tiles' },
+  { name: 'subscribers', path: '../src/routes/subscriberRoutes', route: '/subscribers' }
+];
+
+routesToLoad.forEach(({ name, path, route }) => {
+  try {
+    const routeModule = require(path);
+    app.use(route, routeModule);
+    routesLoaded[name] = true;
+    console.log(`✅ Loaded ${name} routes at ${route}`);
+  } catch (error) {
+    routesLoaded[name] = false;
+    console.error(`❌ Failed to load ${name} routes:`, error.message);
+  }
 });
 
-// 404 handler - MUST be absolutely last
-app.use((req, res) => {
-  console.log('404 - Route not found:', req.originalUrl, 'Method:', req.method);
-  res.status(404).json({
-    success: false,
-    message: `Route ${req.originalUrl} not found`,
-    method: req.method,
+// Route to check which routes loaded
+app.get('/routes-status', (req, res) => {
+  res.json({
+    message: 'Routes loading status',
+    routesLoaded,
     timestamp: new Date().toISOString()
   });
 });
 
-// Export for Vercel
+// Simple test route for your API routes
+app.get('/products/test', (req, res) => {
+  res.json({ message: 'Products test route working directly' });
+});
+
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error('Error middleware caught:', err);
+  res.status(500).json({
+    success: false,
+    message: 'Internal server error',
+    error: process.env.NODE_ENV === 'development' ? err.message : undefined,
+    timestamp: new Date().toISOString()
+  });
+});
+
+// 404 handler - MUST be last
+app.use((req, res) => {
+  console.log(`404 - Route not found: ${req.method} ${req.originalUrl}`);
+  res.status(404).json({
+    success: false,
+    message: `Route ${req.originalUrl} not found`,
+    method: req.method,
+    timestamp: new Date().toISOString(),
+    availableRoutes: [
+      'GET /',
+      'GET /ping', 
+      'GET /test',
+      'GET /health',
+      'GET /routes-status',
+      'GET /products/test',
+      ...Object.keys(routesLoaded).filter(key => routesLoaded[key]).map(key => `* /${key.replace('-', '/')}`),
+    ]
+  });
+});
+
+console.log('API module loaded');
+
 module.exports = app;
